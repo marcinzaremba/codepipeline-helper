@@ -28,13 +28,13 @@ class Job:
     def complete(self):
         print('Job is completed!')
 
-        return self.codepipeline.put_job_success_result(self.id)
+        return self.codepipeline.put_job_success_result(jobId=self.id)
 
     def continue_later(self, token):
         token_json = json.dumps(token)
         print('Job will continue soon with token: {}.'.format(token_json))
 
-        return self.codepipeline.put_job_success_result(self.id, continuationToken=token_json)
+        return self.codepipeline.put_job_success_result(jobId=self.id, continuationToken=token_json)
 
 
 class Artifact:

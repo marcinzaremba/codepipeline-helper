@@ -2,6 +2,7 @@ import json
 import os
 import shutil
 import uuid
+import zipfile
 from pathlib import Path
 import tempfile
 
@@ -9,6 +10,7 @@ import boto3
 import pip
 import inspect
 
+from codepipeline_helper import action
 
 HANDLER_HEADER_SRC = "from codepipeline_helper import *\n\n"
 HANDLER_FILE_NAME = 'index.py'
@@ -38,6 +40,19 @@ PIPELINE_STACK_TEMPLATE = json.dumps({
                 'ManagedPolicyArns': [
                     'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
                 ],
+                'Policies': [
+                    {
+                        'PolicyName': 'LambdaRole',
+                        'PolicyDocument': {
+                            'Version': '2012-10-17',
+                            'Statement': {
+                                'Effect': 'Allow',
+                                'Action': 'codepipeline:PutJobSuccessResult',
+                                'Resource': '*',
+                            }
+                        }
+                    }
+                ]
             }
         },
         'LambdaFunction': {
@@ -64,9 +79,39 @@ PIPELINE_STACK_TEMPLATE = json.dumps({
                         'Action': 'sts:AssumeRole',
                     }
                 },
-                'ManagedPolicyArns': [
-                    'arn:aws:iam::aws:policy/AWSCodePipelineFullAccess'
-                ],
+                'Policies': [
+                    {
+                        'PolicyName': 'PipelineRole',
+                        'PolicyDocument': {
+                            'Version': '2012-10-17',
+                            'Statement': [
+                                {
+                                    'Effect': 'Allow',
+                                    'Action': [
+                                        's3:GetObject',
+                                        's3:PutObject',
+                                        's3:GetObjectVersion',
+                                    ],
+                                    'Resource': 'arn:aws:s3:::{}/*'.format(S3_BUCKET_NAME)
+                                },
+                                {
+                                    'Effect': 'Allow',
+                                    'Action': 's3:GetBucketVersioning',
+                                    'Resource': 'arn:aws:s3:::{}'.format(S3_BUCKET_NAME)
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    'Action': [
+                                        'lambda:ListFunctions',
+                                        'lambda:InvokeFunction',
+                                        'iam:PassRole',
+                                    ],
+                                    'Resource': '*'
+                                }
+                            ]
+                        }
+                    }
+                ]
             }
         },
         'Pipeline': {
@@ -131,6 +176,8 @@ PIPELINE_STACK_TEMPLATE = json.dumps({
     }
 })
 
+s3 = boto3.resource('s3')
+
 
 def build_lambda(func):
     curr_dir = os.getcwd()
@@ -149,7 +196,6 @@ def build_lambda(func):
         # Make archive and upload to S3
         archive_file = shutil.make_archive('package', 'zip', package_path)
         s3_key = 'lambda/{}'.format(uuid.uuid4().hex)
-        s3 = boto3.resource('s3')
         s3.meta.client.upload_file(archive_file, S3_BUCKET_NAME, s3_key)
     except: # noqa
         raise
@@ -181,14 +227,26 @@ def deploy_pipeline(s3_key):
     return stack_name, outputs
 
 
-def execute_pipeline(pipeline_name, input_artifact):
-    pass
+def create_artifact(items):
+    temp_file = tempfile.NamedTemporaryFile()
+    with zipfile.ZipFile(temp_file.name, 'w') as zip_file:
+        for key, value in items.items():
+            zip_file.writestr(key, value)
+
+    s3.meta.client.upload_file(temp_file.name, S3_BUCKET_NAME, 'pipeline/InputArtifact')
 
 
-def handler(event, context):
-    print(event)
+def execute_pipeline(func, input_artifact):
+    create_artifact(input_artifact)
+    s3_key = build_lambda(func)
+    stack_name, outputs = deploy_pipeline(s3_key)
+    print(stack_name, outputs)
 
 
-s3_key = build_lambda(handler)
-stack_name, stack_outputs = deploy_pipeline(s3_key)
-print(stack_name, stack_outputs)
+@action
+def handler(input_artifacts, output_artifacts, params):
+    print(params)
+    print(input_artifacts.keys())
+
+
+execute_pipeline(handler, {'hello': 'world'})
