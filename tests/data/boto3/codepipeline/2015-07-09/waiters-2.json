@@ -1,0 +1,35 @@
+{
+  "version": 2,
+  "waiters": {
+    "PipelineExecutionSucceeded": {
+      "delay": 15,
+      "operation": "GetPipelineExecution",
+      "maxAttempts": 40,
+      "acceptors": [
+        {
+          "expected": "PipelineNotFoundException",
+          "matcher": "error",
+          "state": "retry"
+        },
+        {
+          "expected": "Succeeded",
+          "matcher": "path",
+          "state": "success",
+          "argument": "pipelineExecution.status"
+        },
+        {
+          "expected": "Failed",
+          "matcher": "path",
+          "state": "failure",
+          "argument": "pipelineExecution.status"
+        },
+        {
+          "expected": "Superseded",
+          "matcher": "path",
+          "state": "failure",
+          "argument": "pipelineExecution.status"
+        }
+      ]
+    }
+  }
+}

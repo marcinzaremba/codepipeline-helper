@@ -8,6 +8,50 @@ import boto3
 import botocore
 
 
+def log(event, **kwargs):
+    kwargs['event'] = event
+    print(json.dumps(kwargs))
+
+
+def build_s3_client(credentials_dict):
+    session = boto3.Session(
+        aws_access_key_id=credentials_dict['accessKeyId'],
+        aws_secret_access_key=credentials_dict['secretAccessKey'],
+        aws_session_token=credentials_dict['sessionToken'],
+    )
+    client = session.client('s3', config=botocore.client.Config(signature_version='s3v4'))
+
+    return client
+
+
+def parse_artifacts(artifacts_list, s3_client, artifact_cls):
+    for artifact_dict in artifacts_list:
+        location = artifact_dict['location']['s3Location']
+        yield artifact_dict['name'], artifact_cls(location['objectKey'], location['bucketName'], s3_client)
+
+
+def publish_artifacts(artifacts):
+    for artifact in artifacts.values():
+        artifact.publish()
+    log('output_artifacts_published', artifacts={name: artifact.to_dict() for name, artifact in artifacts.items()})
+
+
+def parse_params(configuration):
+    params_json = configuration.get('UserParameters')
+    if params_json:
+        return json.loads(params_json)
+    else:
+        return {}
+
+
+def parse_token(data):
+    token_json = data.get('continuationToken')
+    if token_json:
+        return json.loads(token_json)
+    else:
+        return None
+
+
 class ContinueLater(Exception):
     def __init__(self, *args, **kwargs):
         self.token = kwargs
@@ -20,19 +64,19 @@ class Job:
         self.codepipeline = codepipeline or boto3.client('codepipeline')
 
     def fail(self, message):
-        print('Job failed: {}.'.format(message))
+        log('job_failed', message=message)
 
         return self.codepipeline.put_job_failure_result(jobId=self.id,
                                                         failureDetails={'message': message, 'type': 'JobFailed'})
 
-    def complete(self):
-        print('Job is completed!')
+    def complete(self, summary=None):
+        log('job_completed')
 
         return self.codepipeline.put_job_success_result(jobId=self.id)
 
     def continue_later(self, token):
         token_json = json.dumps(token)
-        print('Job will continue soon with token: {}.'.format(token_json))
+        log('job_will_continue', token=token)
 
         return self.codepipeline.put_job_success_result(jobId=self.id, continuationToken=token_json)
 
@@ -50,6 +94,9 @@ class Artifact:
     @property
     def archive(self):
         raise NotImplementedError
+
+    def to_dict(self):
+        return dict(bucket_name=self.bucket_name, object_key=self.object_key)
 
 
 class InputArtifact(Artifact):
@@ -71,48 +118,17 @@ class OutputArtifact(Artifact):
         return self.archive.writestr(key, value)
 
     def publish(self):
+        self.archive.close()
         self.s3.upload_fileobj(self.file_obj, self.bucket_name, self.object_key)
 
 
-def build_s3_client(credentials_dict):
-    session = boto3.Session(
-        aws_access_key_id=credentials_dict['accessKeyId'],
-        aws_secret_access_key=credentials_dict['secretAccessKey'],
-        aws_session_token=credentials_dict['sessionToken'],
-    )
-    client = session.client('s3', config=botocore.client.Config(signature_version='s3v4'))
-
-    return client
-
-
-def parse_artifacts(artifacts_list, s3_client, artifact_cls):
-    for artifact_dict in artifacts_list:
-        location = artifact_dict['location']['s3Location']
-        yield artifact_dict['name'], artifact_cls(location['objectKey'], location['bucketName'], s3_client)
-
-
-def publish_artifacts(artifacts):
-    for artifact in artifacts:
-        artifact.publish()
-
-
-def parse_params(configuration):
-    params_json = configuration.get('UserParameters')
-    if params_json:
-        return json.loads(params_json)
+def action(handler=None, **kwargs):
+    if handler:
+        config = {}
+        config.update(kwargs)
     else:
-        return {}
+        return functools.partial(action, **kwargs)
 
-
-def parse_token(data):
-    token_json = data.get('continuationToken')
-    if token_json:
-        return json.loads(token_json)
-    else:
-        return None
-
-
-def action(handler):
     def on_continue(on_continue_handler):
         wrapper.on_continue_handler = on_continue_handler
 
@@ -142,8 +158,8 @@ def action(handler):
             publish_artifacts(output_artifacts)
             job.continue_later(e.token)
         except Exception as e:
-            traceback.print_exc()
-            job.fail('Action failed due to exception: {}'.format(str(e)))
+            log('exception_raised', name=str(e), traceback=traceback.format_exc())
+            job.fail('Action failed due to exception: {}'.format(type(e).__name__))
         else:
             publish_artifacts(output_artifacts)
             job.complete()
