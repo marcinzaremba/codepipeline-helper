@@ -1,6 +1,10 @@
+import unittest
+
 from . import IntegrationTestCase
 
 from codepipeline_helper import action
 
 
-# TODO: Write test cases finally!
+class TestCaseTest(unittest.TestCase):
+    def test_dupa(self):
+        self.assertTrue(False)

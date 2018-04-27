@@ -1,18 +1,115 @@
+import contextlib
 import inspect
 import io
 import json
 import os
 import shutil
+import sys
 import tempfile
 import textwrap
 import unittest
 import uuid
 import zipfile
 from pathlib import Path
+from unittest import mock
 
 import boto3
 import botocore
 import pip
+
+
+class UnitTestCase(unittest.TestCase):
+    def get_codepipeline_mock(self):
+        client = mock.MagicMock()
+        client.put_job_success_result.return_value = {}
+        client.put_job_failure_result.return_value = {}
+
+        return client
+
+    def get_s3_mock(self):
+        return mock.MagicMock()
+
+    def patch_boto3(self):
+        self.s3 = self.get_s3_mock()
+        self.codepipeline = self.get_codepipeline_mock()
+
+        def client_mock(name, *args, **kwargs):
+            if name == 's3':
+                return self.s3
+            elif name == 'codepipeline':
+                return self.codepipeline
+
+        self.client_patch = mock.patch('codepipeline_helper.boto3.Session.client', mock.Mock(side_effect=client_mock))
+        self.client_patch.start()
+
+    def redirect_stdout(self):
+        self.stdout = io.StringIO()
+        self.old_stdout = sys.stdout
+        sys.stdout = self.stdout
+
+    def restore_stdout(self):
+        sys.stdout = self.old_stdout
+
+    def get_event(self, token=None, params=None):
+        data = {
+            'artifactCredentials': {
+                'accessKeyId': '',
+                'secretAccessKey': '',
+                'sessionToken': '',
+            },
+            'outputArtifacts': [],
+            'inputArtifacts': [],
+            'actionConfiguration': {'configuration': {}}
+        }
+        job_id = str(uuid.uuid4())
+        event = {
+            'CodePipeline.job': {
+                'id': job_id,
+                'data': data,
+            }
+        }
+        if token:
+            data['continuationToken'] = json.dumps(token)
+        if params:
+            data['actionConfiguration']['configuration']['UserParameters'] = json.dumps(params)
+
+        return job_id, event
+
+    def setUp(self):
+        self.patch_boto3()
+        self.redirect_stdout()
+
+    def tearDown(self):
+        self.client_patch.stop()
+        self.restore_stdout()
+
+    def assertActionState(self, func, job_id):
+        _, kwargs = func.call_args
+
+        self.assertEqual(func.call_count, 1)
+        self.assertIn('jobId', kwargs)
+        self.assertEqual(kwargs['jobId'], job_id)
+
+    def assertActionSuccessful(self, job_id):
+        self.assertActionState(self.codepipeline.put_job_success_result, job_id)
+
+    def assertActionFailed(self, job_id):
+        self.assertActionState(self.codepipeline.put_job_failure_result, job_id)
+
+    def assertContinuationTokenEqual(self, token):
+        func = self.codepipeline.put_job_success_result
+        _, kwargs = func.call_args
+
+        self.assertIn('continuationToken', kwargs)
+        self.assertEqual(json.loads(kwargs['continuationToken']), token)
+
+    def assertFailureMessageRegex(self, regex):
+        func = self.codepipeline.put_job_failure_result
+        _, kwargs = func.call_args
+
+        self.assertIn('failureDetails', kwargs)
+        self.assertIn('message', kwargs['failureDetails'])
+        self.assertRegex(kwargs['failureDetails']['message'], regex)
 
 
 class IntegrationTestCase(unittest.TestCase):
@@ -344,3 +441,5 @@ class IntegrationTestCase(unittest.TestCase):
         self.create_artifact(source_artifact)
         s3_key = self.build_lambda(func)
         self.stack_name, self.pipeline_name, self.function_name = self.deploy_pipeline(s3_key, output_artifact_names)
+
+contextlib.redirect_stdout

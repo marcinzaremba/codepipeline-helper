@@ -132,6 +132,8 @@ def action(handler=None, **kwargs):
     def on_continue(on_continue_handler):
         wrapper.on_continue_handler = on_continue_handler
 
+        return on_continue_handler
+
     def wrapper(event, context):
         job = event['CodePipeline.job']
         data = job['data']
