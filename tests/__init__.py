@@ -27,7 +27,10 @@ class UnitTestCase(unittest.TestCase):
         return client
 
     def get_s3_mock(self):
-        return mock.MagicMock()
+        client = mock.MagicMock()
+        client.download_fileobj.side_effect = None
+
+        return client
 
     def patch_boto3(self):
         self.s3 = self.get_s3_mock()
@@ -50,7 +53,17 @@ class UnitTestCase(unittest.TestCase):
     def restore_stdout(self):
         sys.stdout = self.old_stdout
 
-    def get_event(self, token=None, params=None):
+    def get_event_artifacts(self, artifacts=None):
+        for name, item in artifacts.items():
+            yield {
+                'name': name,
+                'location': {'s3Location': {
+                    'bucketName': item.bucket_name,
+                    'objectKey': item.object_key,
+                }}
+            }
+
+    def get_event(self, token=None, params=None, input_artifacts=None, output_artifacts=None):
         data = {
             'artifactCredentials': {
                 'accessKeyId': '',
@@ -72,29 +85,37 @@ class UnitTestCase(unittest.TestCase):
             data['continuationToken'] = json.dumps(token)
         if params:
             data['actionConfiguration']['configuration']['UserParameters'] = json.dumps(params)
+        if input_artifacts:
+            data['inputArtifacts'].extend(self.get_event_artifacts(input_artifacts))
+        if output_artifacts:
+            data['outputArtifacts'].extend(self.get_event_artifacts(output_artifacts))
 
-        return job_id, event
+        return event
+
+    def randstr(self):
+        return uuid.uuid4().hex
 
     def setUp(self):
         self.patch_boto3()
+        # self.patch_tempfile()
         self.redirect_stdout()
 
     def tearDown(self):
         self.client_patch.stop()
         self.restore_stdout()
 
-    def assertActionState(self, func, job_id):
+    def assertActionState(self, event, func):
         _, kwargs = func.call_args
 
         self.assertEqual(func.call_count, 1)
         self.assertIn('jobId', kwargs)
-        self.assertEqual(kwargs['jobId'], job_id)
+        self.assertEqual(kwargs['jobId'], event['CodePipeline.job']['id'])
 
-    def assertActionSuccessful(self, job_id):
-        self.assertActionState(self.codepipeline.put_job_success_result, job_id)
+    def assertActionSuccessful(self, event):
+        self.assertActionState(event, self.codepipeline.put_job_success_result)
 
-    def assertActionFailed(self, job_id):
-        self.assertActionState(self.codepipeline.put_job_failure_result, job_id)
+    def assertActionFailed(self, event):
+        self.assertActionState(event, self.codepipeline.put_job_failure_result)
 
     def assertContinuationTokenEqual(self, token):
         func = self.codepipeline.put_job_success_result
@@ -441,5 +462,3 @@ class IntegrationTestCase(unittest.TestCase):
         self.create_artifact(source_artifact)
         s3_key = self.build_lambda(func)
         self.stack_name, self.pipeline_name, self.function_name = self.deploy_pipeline(s3_key, output_artifact_names)
-
-contextlib.redirect_stdout

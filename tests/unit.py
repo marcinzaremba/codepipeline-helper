@@ -1,8 +1,6 @@
-import functools
-import unittest
 from unittest import mock
 
-from codepipeline_helper import action, ContinueLater
+from codepipeline_helper import action, ContinueLater, InputArtifact, OutputArtifact
 from tests import UnitTestCase
 
 
@@ -16,47 +14,80 @@ class TestAction(UnitTestCase):
         self.assertEqual(result, on_continue_handler)
         self.assertEqual(decorated_handler.on_continue_handler, on_continue_handler)
 
-    def test_run_handler(self):
+    def test_call_handler_with_kwargs(self):
         handler = mock.MagicMock()
         decorated_handler = action(handler)
-        job_id, event = self.get_event()
+        params = {'param1': 'one', 'param2': 'two'}
+        bucket_name = self.randstr()
+        input_artifacts = {
+            'input1': InputArtifact(bucket_name=bucket_name, object_key=self.randstr(), s3_client=self.s3),
+            'input2': InputArtifact(bucket_name=bucket_name, object_key=self.randstr(), s3_client=self.s3),
+        }
+        output_artifacts = {
+            'output1': OutputArtifact(bucket_name=bucket_name, object_key=self.randstr(), s3_client=self.s3),
+            'output2': OutputArtifact(bucket_name=bucket_name, object_key=self.randstr(), s3_client=self.s3),
+        }
+        event = self.get_event(params=params, input_artifacts=input_artifacts, output_artifacts=output_artifacts)
 
         decorated_handler(event, None)
 
-        self.assertActionSuccessful(job_id)
+        handler.assert_called_with(
+            params=params,
+            input_artifacts=input_artifacts,
+            output_artifacts=output_artifacts
+        )
+
+    # def test_read_artifacts(self):
+    #     @action
+    #     def handler(params, input_artifacts, output_artifacts):
+    #         pass
+    #     event = self.get_event()
+    #
+    #     handler(event, None)
+    #
+
+
+    def test_run_handler(self):
+        handler = mock.MagicMock()
+        decorated_handler = action(handler)
+        event = self.get_event()
+
+        decorated_handler(event, None)
+
+        self.assertActionSuccessful(event)
         self.assertEqual(handler.call_count, 1)
 
     def test_call_continue_later(self):
         token = {'sample': 'token'}
         handler = mock.MagicMock(side_effect=ContinueLater(**token))
         decorated_handler = action(handler)
-        job_id, event = self.get_event()
+        event = self.get_event()
 
         decorated_handler(event, None)
 
-        self.assertActionSuccessful(job_id)
+        self.assertActionSuccessful(event)
         self.assertContinuationTokenEqual(token)
 
-    def test_run_continuation_handler(self):
+    def test_run_on_continue_handler(self):
         handler = mock.MagicMock()
         decorated_handler = action(handler)
-        continuation_handler = mock.MagicMock()
-        decorated_handler.on_continue(continuation_handler)
+        on_continue_handler = mock.MagicMock()
+        decorated_handler.on_continue(on_continue_handler)
         token = {'sample': 'token'}
-        job_id, event = self.get_event(token=token)
+        event = self.get_event(token=token)
 
         decorated_handler(event, None)
 
-        self.assertActionSuccessful(job_id)
-        self.assertEqual(continuation_handler.call_count, 1)
+        self.assertActionSuccessful(event)
+        self.assertEqual(on_continue_handler.call_count, 1)
         self.assertEqual(handler.call_count, 0)
 
     def test_call_fail(self):
         handler = mock.MagicMock(side_effect=Exception)
         decorated_handler = action(handler)
-        job_id, event = self.get_event()
+        event = self.get_event()
 
         decorated_handler(event, None)
 
-        self.assertActionFailed(job_id)
+        self.assertActionFailed(event)
         self.assertFailureMessageRegex('Action failed due to exception')

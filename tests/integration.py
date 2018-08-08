@@ -5,6 +5,12 @@ from . import IntegrationTestCase
 from codepipeline_helper import action
 
 
-class TestCaseTest(unittest.TestCase):
-    def test_dupa(self):
-        self.assertTrue(False)
+class TestIntegration(IntegrationTestCase):
+    def test_basic(self):
+        @action
+        def handler(input_artifacts, output_artifacts, params):
+            pass
+
+        self.start_pipeline_execution(handler, {})
+
+        self.assertPipelineExecutionSucceeded()

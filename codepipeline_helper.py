@@ -91,6 +91,17 @@ class Artifact:
     def __getitem__(self, key):
         return self.archive.read(key)
 
+    def __eq__(self, other):
+        return all([
+            type(self) == type(other),
+            self.bucket_name == other.bucket_name,
+            self.object_key == other.object_key,
+            self.s3 == other.s3,
+        ])
+
+    def __hash__(self):
+        return hash((self.bucket_name, self.object_key, self.s3))
+
     @property
     def archive(self):
         raise NotImplementedError
