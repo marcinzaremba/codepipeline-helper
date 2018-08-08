@@ -1,11 +1,16 @@
 import functools
 import json
-import traceback
 import tempfile
+import traceback
 import zipfile
+from typing import Dict, Optional
 
 import boto3
 import botocore
+
+
+Params = Dict[str, str]
+Token = Optional[Dict]
 
 
 def log(event, **kwargs):
@@ -36,7 +41,7 @@ def publish_artifacts(artifacts):
     log('output_artifacts_published', artifacts={name: artifact.to_dict() for name, artifact in artifacts.items()})
 
 
-def parse_params(configuration):
+def parse_params(configuration: Dict) -> Params:
     params_json = configuration.get('UserParameters')
     if params_json:
         return json.loads(params_json)
@@ -44,7 +49,7 @@ def parse_params(configuration):
         return {}
 
 
-def parse_token(data):
+def parse_token(data: Dict) -> Token:
     token_json = data.get('continuationToken')
     if token_json:
         return json.loads(token_json)
