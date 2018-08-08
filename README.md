@@ -1,5 +1,7 @@
 # codepipeline-helper
 
+[![Build Status](https://travis-ci.com/marcinzaremba/codepipeline-helper.svg?branch=master)](https://travis-ci.com/marcinzaremba/codepipeline-helper)
+
 Small Python library that simplifies writing AWS Lambda functions which are a part of AWS CodePipeline pipelines.
 
 Simply: CodePipeline Lambda functions for Humans.
