@@ -4,4 +4,4 @@ python:
 install:
   - pip install '.[dev]'
 script:
-  - python setup.py test_unit
+  - make test
