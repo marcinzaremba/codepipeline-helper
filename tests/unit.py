@@ -46,7 +46,6 @@ class TestAction(UnitTestCase):
     #     handler(event, None)
     #
 
-
     def test_run_handler(self):
         handler = mock.MagicMock()
         decorated_handler = action(handler)

@@ -1,4 +1,3 @@
-import contextlib
 import inspect
 import io
 import json
@@ -394,7 +393,7 @@ class IntegrationTestCase(unittest.TestCase):
             package_path = Path('package')
             package_path.mkdir()
             handler_src = self.HANDLER_HEADER_SRC + textwrap.dedent(func_src)
-            handler_path =  package_path / self.HANDLER_FILE_NAME
+            handler_path = package_path / self.HANDLER_FILE_NAME
             handler_path.write_text(handler_src)
             pip.main(['install', curr_dir, '-qq', '-t', package_path])
             # Make archive and upload to S3

@@ -1,5 +1,3 @@
-import unittest
-
 from . import IntegrationTestCase
 
 from codepipeline_helper import action
