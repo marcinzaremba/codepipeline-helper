@@ -9,54 +9,6 @@ import boto3
 import botocore
 
 
-Params = Dict[str, str]
-Token = Optional[Dict]
-
-
-def log(event, **kwargs):
-    kwargs['event'] = event
-    print(json.dumps(kwargs))
-
-
-def build_s3_client(credentials_dict):
-    session = boto3.Session(
-        aws_access_key_id=credentials_dict['accessKeyId'],
-        aws_secret_access_key=credentials_dict['secretAccessKey'],
-        aws_session_token=credentials_dict['sessionToken'],
-    )
-    client = session.client('s3', config=botocore.client.Config(signature_version='s3v4'))
-
-    return client
-
-
-def parse_artifacts(artifacts_list, s3_client, artifact_cls):
-    for artifact_dict in artifacts_list:
-        location = artifact_dict['location']['s3Location']
-        yield artifact_dict['name'], artifact_cls(location['objectKey'], location['bucketName'], s3_client)
-
-
-def publish_artifacts(artifacts):
-    for artifact in artifacts.values():
-        artifact.publish()
-    log('output_artifacts_published', artifacts={name: artifact.to_dict() for name, artifact in artifacts.items()})
-
-
-def parse_params(configuration: Dict) -> Params:
-    params_json = configuration.get('UserParameters')
-    if params_json:
-        return json.loads(params_json)
-    else:
-        return {}
-
-
-def parse_token(data: Dict) -> Token:
-    token_json = data.get('continuationToken')
-    if token_json:
-        return json.loads(token_json)
-    else:
-        return None
-
-
 class ContinueLater(Exception):
     def __init__(self, *args, **kwargs):
         self.token = kwargs
@@ -136,6 +88,57 @@ class OutputArtifact(Artifact):
     def publish(self):
         self.archive.close()
         self.s3.upload_fileobj(self.file_obj, self.bucket_name, self.object_key)
+
+
+Params = Dict[str, str]
+Token = Optional[Dict]
+Artifacts = Dict[str, Artifact]
+InputArtifacts = Artifacts
+OutputArtifacts = Artifacts
+
+
+def log(event, **kwargs):
+    kwargs['event'] = event
+    print(json.dumps(kwargs))
+
+
+def build_s3_client(credentials_dict):
+    session = boto3.Session(
+        aws_access_key_id=credentials_dict['accessKeyId'],
+        aws_secret_access_key=credentials_dict['secretAccessKey'],
+        aws_session_token=credentials_dict['sessionToken'],
+    )
+    client = session.client('s3', config=botocore.client.Config(signature_version='s3v4'))
+
+    return client
+
+
+def parse_artifacts(artifacts_list, s3_client, artifact_cls):
+    for artifact_dict in artifacts_list:
+        location = artifact_dict['location']['s3Location']
+        yield artifact_dict['name'], artifact_cls(location['objectKey'], location['bucketName'], s3_client)
+
+
+def publish_artifacts(artifacts):
+    for artifact in artifacts.values():
+        artifact.publish()
+    log('output_artifacts_published', artifacts={name: artifact.to_dict() for name, artifact in artifacts.items()})
+
+
+def parse_params(configuration: Dict) -> Params:
+    params_json = configuration.get('UserParameters')
+    if params_json:
+        return json.loads(params_json)
+    else:
+        return {}
+
+
+def parse_token(data: Dict) -> Token:
+    token_json = data.get('continuationToken')
+    if token_json:
+        return json.loads(token_json)
+    else:
+        return None
 
 
 def action(handler=None, **kwargs):

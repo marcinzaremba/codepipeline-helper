@@ -1,3 +1,3 @@
 test:
 	flake8
-	python setup.py test_unit
+	python -m pytest -v tests/unit.py
