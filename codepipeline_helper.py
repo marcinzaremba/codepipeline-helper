@@ -1,4 +1,5 @@
 import functools
+import inspect
 import json
 import tempfile
 import traceback
@@ -162,19 +163,22 @@ def action(handler=None, **kwargs):
         try:
             s3_client = build_s3_client(data['artifactCredentials'])
             token = parse_token(data)
+            input_artifacts = dict(parse_artifacts(data['inputArtifacts'], s3_client, InputArtifact))
             output_artifacts = dict(parse_artifacts(data['outputArtifacts'], s3_client, OutputArtifact))
-            kwargs = dict(
-                input_artifacts=dict(parse_artifacts(data['inputArtifacts'], s3_client, InputArtifact)),
-                output_artifacts=output_artifacts,
-                params=parse_params(data['actionConfiguration']['configuration']),
-            )
-            if token:
-                kwargs['token'] = token
-                actual_handler = wrapper.on_continue_handler
-            else:
-                actual_handler = handler
+            params = parse_params(data['actionConfiguration']['configuration'])
+            actual_handler = wrapper.on_continue_handler if token else handler
+            available_kwargs = {
+                'input_artifacts': input_artifacts,
+                'output_artifacts': output_artifacts,
+                'params': params,
+                'token': token,
+            }
+            handler_kwargs = {
+                kwarg_name: available_kwargs.get(kwarg_name)
+                for kwarg_name in inspect.signature(actual_handler).parameters
+            }
 
-            actual_handler(**kwargs)
+            actual_handler(**handler_kwargs)
         except ContinueLater as e:
             publish_artifacts(output_artifacts)
             job.continue_later(e.token)
