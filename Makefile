@@ -1,3 +1,3 @@
 test:
 	flake8
-	python -m pytest -v tests/unit.py
+	python -m pytest -v tests/unit/
